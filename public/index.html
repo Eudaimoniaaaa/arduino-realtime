@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>实时传感器数据</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .box {
+      margin-bottom: 30px;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    canvas {
+      max-width: 100%;
+    }
+    button {
+      margin-top: 10px;
+      padding: 6px 12px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    select, input[type="color"] {
+      margin-left: 10px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📡 实时传感器数据</h1>
+
+  <div class="box">
+    <h3>🧪 原始数据</h3>
+    <pre id="output">等待数据中...</pre>
+  </div>
+
+  <div class="box">
+    <h3>🤖 DeepSeek 分析结果</h3>
+    <pre id="analysis">等待分析中...</pre>
+  </div>
+
+  <div class="box">
+    <h3>📊 图表类型选择</h3>
+    <label for="chartType">选择图表类型：</label>
+    <select id="chartType">
+      <option value="line">折线图</option>
+      <option value="bar">柱状图</option>
+      <option value="radar">雷达图</option>
+      <option value="pie">饼图</option>
+      <option value="doughnut">环形图</option>
+    </select>
+  </div>
+
+  <div class="box">
+    <h3>🌡️ 温度</h3>
+    <label><input type="checkbox" id="tempFill" checked> 填充</label>
+    <input type="color" id="tempColor" value="#ff6384" />
+    <canvas id="tempChart"></canvas>
+    <button onclick="downloadChart(tempChart, '温度图表')">导出图表 PNG</button>
+  </div>
+
+  <div class="box">
+    <h3>💡 光照强度 (lux)</h3>
+    <label><input type="checkbox" id="lightFill"> 填充</label>
+    <input type="color" id="lightColor" value="#ffce56" />
+    <canvas id="lightChart"></canvas>
+    <button onclick="downloadChart(lightChart, '光照图表')">导出图表 PNG</button>
+  </div>
+
+  <div class="box">
+    <h3>🌱 土壤湿度</h3>
+    <label><input type="checkbox" id="soilFill" checked> 填充</label>
+    <input type="color" id="soilColor" value="#4bc0c0" />
+    <canvas id="soilChart"></canvas>
+    <button onclick="downloadChart(soilChart, '土壤湿度图表')">导出图表 PNG</button>
+  </div>
+
+  <script>
+    const socket = io();
+    let chartType = 'line';
+    const labels = [], tempData = [], lightData = [], soilData = [];
+    let tempChart, lightChart, soilChart;
+
+    document.getElementById("chartType").addEventListener("change", e => {
+      chartType = e.target.value;
+      rebuildAllCharts();
+    });
+
+    ["tempFill", "tempColor", "lightFill", "lightColor", "soilFill", "soilColor"].forEach(id => {
+      document.getElementById(id).addEventListener("input", rebuildAllCharts);
+    });
+
+    function createChart(ctx, label, data, fill, color) {
+      const referenceValues = {
+        "温度 (°C)": 25,
+        "光照 (lux)": 1000,
+        "土壤湿度": 50
+      };
+
+      return new Chart(ctx, {
+        type: chartType,
+        data: {
+          labels,
+          datasets: [{
+            label,
+            data,
+            borderColor: color,
+            backgroundColor: fill ? color + "55" : 'transparent',
+            fill: ['line', 'radar'].includes(chartType) && fill,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: true },
+            annotation: referenceValues[label] && !['pie', 'doughnut'].includes(chartType) ? {
+              annotations: {
+                refLine: {
+                  type: 'line',
+                  yMin: referenceValues[label],
+                  yMax: referenceValues[label],
+                  borderColor: 'red',
+                  borderWidth: 2,
+                  borderDash: [6, 6],
+                  label: {
+                    content: '理想值',
+                    enabled: true,
+                    position: 'start',
+                    backgroundColor: 'rgba(255,0,0,0.1)',
+                    color: 'red',
+                  }
+                }
+              }
+            } : {}
+          },
+          scales: ['radar', 'pie', 'doughnut'].includes(chartType) ? {} : {
+            x: { beginAtZero: true },
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function rebuildAllCharts() {
+      tempChart?.destroy();
+      lightChart?.destroy();
+      soilChart?.destroy();
+
+      tempChart = createChart(
+        document.getElementById("tempChart").getContext("2d"),
+        "温度 (°C)",
+        tempData,
+        document.getElementById("tempFill").checked,
+        document.getElementById("tempColor").value
+      );
+
+      lightChart = createChart(
+        document.getElementById("lightChart").getContext("2d"),
+        "光照 (lux)",
+        lightData,
+        document.getElementById("lightFill").checked,
+        document.getElementById("lightColor").value
+      );
+
+      soilChart = createChart(
+        document.getElementById("soilChart").getContext("2d"),
+        "土壤湿度",
+        soilData,
+        document.getElementById("soilFill").checked,
+        document.getElementById("soilColor").value
+      );
+    }
+
+    function updateDataAndCharts(label, temp, lux, soil) {
+      labels.push(label);
+      tempData.push(temp);
+      lightData.push(lux);
+      soilData.push(soil);
+      if (labels.length > 20) {
+        labels.shift(); tempData.shift(); lightData.shift(); soilData.shift();
+      }
+      rebuildAllCharts();
+    }
+
+    function downloadChart(chart, name) {
+      const link = document.createElement("a");
+      link.href = chart.toBase64Image();
+      link.download = `${name}.png`;
+      link.click();
+    }
+
+    socket.on("sensorData", (data) => {
+      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+      const time = new Date().toLocaleTimeString();
+      updateDataAndCharts(time, data.temperature, data.lux, data.soilHumidity);
+    });
+
+    socket.on("deepseek-analysis", (result) => {
+      document.getElementById("analysis").textContent = result;
+    });
+
+    rebuildAllCharts();
+  </script>
+</body>
+</html>
