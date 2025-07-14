@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <title>实时传感器数据</title>
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- 使用 CDN 加载 socket.io 客户端 -->
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
   <style>
@@ -70,7 +71,7 @@
     <label><input type="checkbox" id="tempFill" checked> 填充</label>
     <input type="color" id="tempColor" value="#ff6384" />
     <canvas id="tempChart"></canvas>
-    <button onclick="downloadChart(tempChart, '温度图表')">导出图表 PNG</button>
+    <button onclick="downloadChart(tempChart, 'temp_chart')">导出图表 PNG</button>
   </div>
 
   <div class="box">
@@ -78,7 +79,7 @@
     <label><input type="checkbox" id="lightFill"> 填充</label>
     <input type="color" id="lightColor" value="#ffce56" />
     <canvas id="lightChart"></canvas>
-    <button onclick="downloadChart(lightChart, '光照图表')">导出图表 PNG</button>
+    <button onclick="downloadChart(lightChart, 'light_chart')">导出图表 PNG</button>
   </div>
 
   <div class="box">
@@ -86,7 +87,7 @@
     <label><input type="checkbox" id="soilFill" checked> 填充</label>
     <input type="color" id="soilColor" value="#4bc0c0" />
     <canvas id="soilChart"></canvas>
-    <button onclick="downloadChart(soilChart, '土壤湿度图表')">导出图表 PNG</button>
+    <button onclick="downloadChart(soilChart, 'soil_chart')">导出图表 PNG</button>
   </div>
 
   <script>
@@ -204,7 +205,8 @@
       link.click();
     }
 
-    socket.on("sensorData", (data) => {
+    // 监听后端事件，注意事件名改为和后端保持一致 "sensor-data"
+    socket.on("sensor-data", (data) => {
       document.getElementById("output").textContent = JSON.stringify(data, null, 2);
       const time = new Date().toLocaleTimeString();
       updateDataAndCharts(time, data.temperature, data.lux, data.soilHumidity);
@@ -213,6 +215,17 @@
     socket.on("deepseek-analysis", (result) => {
       document.getElementById("analysis").textContent = result;
     });
+
+    // 页面加载时请求最新历史数据，避免刷新页面时没有显示数据
+    fetch("/api/data")
+      .then(res => res.json())
+      .then(({ sensorData }) => {
+        if(sensorData) {
+          document.getElementById("output").textContent = JSON.stringify(sensorData, null, 2);
+          const time = new Date().toLocaleTimeString();
+          updateDataAndCharts(time, sensorData.temperature, sensorData.lux, sensorData.soilHumidity);
+        }
+      });
 
     rebuildAllCharts();
   </script>
